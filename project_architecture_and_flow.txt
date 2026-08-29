@@ -1,0 +1,95 @@
+=============================================================
+      AI CCTV SURVEILLANCE PLATFORM - ARCHITECTURE & FLOW
+=============================================================
+
+1. THE COMPLETE TECH STACK
+-------------------------------------------------------------
+FRONTEND:
+- React (Component-based UI)
+- Vite (Fast development server and bundler)
+- Tailwind CSS (Utility-first styling for a premium UI)
+- React Router DOM (Navigation between pages)
+- Context API (AlertContext for global state management like notifications)
+
+BACKEND:
+- FastAPI (High-performance Python web framework)
+- Uvicorn (ASGI web server for running FastAPI)
+- SQLAlchemy + PyMySQL (ORM and DB driver to interact with MySQL)
+- JSON Web Tokens (PyJWT) & Passlib (API Security and User Authentication)
+
+DATABASE:
+- MySQL via XAMPP (Relational database for storing user data, alerts, and detection logs)
+
+AI & COMPUTER VISION:
+- Ultralytics YOLO (Real-time Object Detection, e.g., Vehicles, Persons, Weapons)
+- EasyOCR (Optical Character Recognition to read License Plates)
+- OpenCV (Video frame processing and image manipulation)
+- ByteTrack (Used for Object Tracking over multiple frames to avoid duplicate counts)
+
+
+2. LIBRARIES & DEPENDENCIES SUMMARY
+-------------------------------------------------------------
+Backend Libraries (`requirements.txt`):
+- `fastapi`, `uvicorn`: API server setup and execution
+- `sqlalchemy`, `pymysql`: Database ORM and connections
+- `pydantic`: Data validation and Request/Response Schemas
+- `python-dotenv`: Environment variables loading
+- `python-multipart`: For handling file/image uploads & form data
+- `opencv-python-headless`: Fast image processing for CCTV feed (No GUI required)
+- `ultralytics`: YOLOv8 models for rapid real-time object detection
+- `PyJWT`, `passlib[bcrypt]`, `email-validator`: Complete Authentication & Security suite
+- `easyocr`: Text extraction from images (Used for specific Number plates)
+
+Frontend Libraries (`package.json`):
+- `react`, `react-dom`, `vite`: Core framework structure
+- `@tailwindcss/postcss`, `tailwindcss`: Styling engine setup
+- `axios`: For making asynchronous HTTP API calls to the FastAPI backend
+- `lucide-react`: Clean, scalable modern icons for the dashboard UI
+- `recharts`: For rendering interactive analytics charts on the dashboard
+
+
+3. THE FULL SYSTEM WORKFLOW (Kese Kaam Karta Hai?)
+-------------------------------------------------------------
+Step 1: Video Source & Frame Extraction
+- The FastAPI server receives a video feed (can be RTSP stream from IP cameras or an uploaded video file).
+- `OpenCV` continuously reads this video feed frame-by-frame in real-time.
+
+Step 2: Object Detection (The AI Brain)
+- Each individual frame is passed to the `Ultralytics YOLO` AI model.
+- YOLO instantly identifies objects, giving out the "Bounding Boxes" (the rectangle around the object), its "Class" (e.g. Car, Person), and a "Confidence Score" (e.g. 94% sure it's a Car).
+- A tracking algorithm (like ByteTrack) can assign a unique Tracking ID to each detected object. This ensures the system doesn't count the exact same moving car frame-after-frame as multiple different cars. 
+
+Step 3: Snapshot Capture (Jese Hi Detect Hota Hai)
+- When the AI detects a predefined 'event of interest' (e.g., restricted area entry, unusual behavior, or specific vehicle):
+  - `OpenCV` uses the bounding box coordinates provided by YOLO.
+  - It slices/crops that specific area from the full High-Resolution frame, or draws a box on the full frame.
+  - This image (Snapshot) is saved immediately to the backend server's local file storage (e.g., `uploads/snapshots/` folder).
+
+Step 4: License Plate Recognition (Optional/If Appplicable)
+- If a vehicle commits a violation, the cropped snapshot of the vehicle/number plate is passed into `EasyOCR`.
+- EasyOCR scans this cropped image for text and extracts the actual License Plate Number (e.g., "MH 12 AB 1234").
+
+Step 5: Database Insertion
+- Once all data is gathered, FastAPI prepares a detection record. This record includes Data like: Event Type, Timestamp, Confidence Score, Extracted Text, and importantly, the File Path to the saved Snapshot image.
+- This object is validated using `Pydantic` schemas to ensure no garbage data enters the DB.
+- `SQLAlchemy` then securely inserts this record into the `MySQL` DB (e.g., into an `alerts` table).
+
+Step 6: Real-time UI Update
+- The React Frontend automatically pulls or polls this data via `axios`.
+- When a new alert comes in, `AlertContext.jsx` updates your global frontend state.
+- The UI triggers a notification and updates the Alert Dashboard live, showing all the details alongside the Snapshot image.
+
+
+4. SNAPSHOT AND DETECTION DEEP-DIVE
+-------------------------------------------------------------
+Q: Detection precisely kaise work kar raha hai deep mein?
+A: The backbone is YOLOv8's deep neural networks. 
+1. Pre-processing: The raw image frame is resized and normalized into YOLO's required tensor dimensions (e.g., 640x640) by OpenCV to process it faster on the CPU/GPU.
+2. Inference: YOLO processes this tensor and spits out thousands of potential bounding boxes and class predictions dynamically in milliseconds.
+3. Non-Maximum Suppression (NMS): To prevent the dashboard from getting spammed, NMS mathematically filters out overlapping prediction boxes and only keeps the absolute best, most accurate box for every distinct object.
+
+Q: Snapshot exactly kaise generate hoke database-se frontend mein dikh raha hai?
+1. Slice & Save: When YOLO outputs `[x_min, y_min, x_max, y_max]` matrix coordinates for a detected offense, the Python backend literally crops that section of the pixel array and writes it to a file using `cv2.imwrite("uploads/snapshots/alert_id_101.jpg", cropped_frame)`.
+2. Static Mounting: In FastAPI, you use something like `app.mount("/static", StaticFiles(directory="uploads"))` which exposes that folder to the web.
+3. Seamless Delivery: The SQL Database only stores the text path string: `/static/snapshots/alert_id_101.jpg`. When the frontend loads the alerts, the React `<img>` tag simply sets its `src={http://localhost:8000/static/snapshots/alert_id_101.jpg}` rendering the image exactly as it was captured, instantly.
+=============================================================
