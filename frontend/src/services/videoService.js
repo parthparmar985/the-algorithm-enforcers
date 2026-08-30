@@ -13,8 +13,11 @@ export const uploadVideo = async (file) => {
 };
 
 export const startProcessing = async (cameraId, filePath) => {
-  const result = await api.post(`/video/${cameraId}/process`, null, {
-    params: { file_path: filePath }
-  });
-  return result.data;
+  const response = await api.post(`/video/${cameraId}/process?file_path=${encodeURIComponent(filePath)}`);
+  return response.data;
+};
+
+export const startLiveInference = async (cameraId) => {
+  const response = await api.post(`/video/${cameraId}/start-live`);
+  return response.data;
 };

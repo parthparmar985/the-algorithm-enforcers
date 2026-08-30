@@ -54,6 +54,27 @@ def process_video(
     background_tasks.add_task(detector_service.process_video_file, camera_id, file_path)
     return {"message": "AI processing started", "status": "processing"}
 
+@router.post("/{camera_id}/start-live")
+def start_live_inference(
+    camera_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera or not camera.stream_url:
+        raise HTTPException(status_code=400, detail="Camera has no valid Stream URL configured.")
+        
+    stream_url = camera.stream_url
+    if stream_url.endswith(":8080") or stream_url.endswith(":8080/"):
+        stream_url = stream_url.rstrip('/') + '/video'
+        
+    from ...services.detection_service import DetectionService
+    detector_service = DetectionService()
+    
+    background_tasks.add_task(detector_service.process_video_file, camera_id, stream_url)
+    return {"message": "Live Continuous ML Inference engaged for this Node.", "status": "runtime_active"}
+
 def generate_mock_frames(camera: Camera):
     """Generates continuous video frames simulated as real CCTV feed."""
     width, height = 640, 360
@@ -99,7 +120,27 @@ def stream_video(camera_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Camera not found")
         
     def generate_real_frames(url):
+        # Auto-correct common IP Webcam URLs missing the /video endpoint
+        if url.endswith(":8080") or url.endswith(":8080/"):
+            url = url.rstrip('/') + '/video'
+            
         cap = cv2.VideoCapture(url)
+        
+        # If the connection fails, yield a red Error Frame instead of crashing
+        if not cap.isOpened():
+            frame = np.zeros((360, 640, 3), dtype=np.uint8)
+            # Create a striking red error screen
+            frame[:] = (0, 0, 50) # Dark red bg
+            cv2.putText(frame, "CCTV CONNECTION FAILED", (80, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+            cv2.putText(frame, f"URL: {url}", (20, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, "Please verify device is active on network", (80, 260), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            
+            ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            if ret:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            return
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:

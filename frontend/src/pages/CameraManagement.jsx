@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getCameras, createCamera, deleteCamera, updateCamera } from '../services/cameraService';
+import { startLiveInference } from '../services/videoService';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Edit, Camera as CamIcon, Search, Filter, Signal, MapPin, X } from 'lucide-react';
+import { Plus, Trash2, Edit, Camera as CamIcon, Search, Filter, Signal, MapPin, X, Brain } from 'lucide-react';
 
 export default function CameraManagement() {
   const [cameras, setCameras] = useState([]);
@@ -14,7 +15,7 @@ export default function CameraManagement() {
   const { user } = useAuth();
   
   const [formData, setFormData] = useState({
-    camera_name: '', camera_code: '', location: '', latitude: '', longitude: '', stream_url: '', status: 'OFFLINE'
+    camera_name: '', camera_code: '', location: '', stream_url: '', status: 'OFFLINE'
   });
 
   useEffect(() => {
@@ -52,11 +53,9 @@ export default function CameraManagement() {
     e.preventDefault();
     try {
       await createCamera({
-        ...formData,
-        latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-        longitude: formData.longitude ? parseFloat(formData.longitude) : null
+        ...formData
       });
-      setFormData({ camera_name: '', camera_code: '', location: '', latitude: '', longitude: '', stream_url: '', status: 'OFFLINE'});
+      setFormData({ camera_name: '', camera_code: '', location: '', stream_url: '', status: 'OFFLINE'});
       fetchCameras();
     } catch (err) {
       console.error("Failed to create camera");
@@ -73,6 +72,15 @@ export default function CameraManagement() {
     }
   };
 
+  const handleStartLiveAI = async (id) => {
+    try {
+      await startLiveInference(id);
+      alert("SUCCESS: Live continuous Machine Learning inference has been activated for this camera! Check View Records for extractions.");
+    } catch (err) {
+      alert("Failed to start AI. Ensure Stream URL is valid.");
+    }
+  }
+
   const handleUpdate = async (e) => {
     e.preventDefault();
     try {
@@ -80,8 +88,6 @@ export default function CameraManagement() {
         camera_name: editingCamera.camera_name,
         camera_code: editingCamera.camera_code,
         location: editingCamera.location,
-        latitude: editingCamera.latitude ? parseFloat(editingCamera.latitude) : null,
-        longitude: editingCamera.longitude ? parseFloat(editingCamera.longitude) : null,
         stream_url: editingCamera.stream_url,
         status: editingCamera.status
       });
@@ -162,16 +168,7 @@ export default function CameraManagement() {
                 <label className="block text-xs font-bold text-slate-400 mb-1">LOCATION DESCRIPTION</label>
                 <input type="text" className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} placeholder="North Ring Road" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">LATITUDE</label>
-                  <input required type="number" step="any" className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={formData.latitude} onChange={e => setFormData({...formData, latitude: e.target.value})} placeholder="28.6139" />
-                 </div>
-                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">LONGITUDE</label>
-                  <input required type="number" step="any" className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={formData.longitude} onChange={e => setFormData({...formData, longitude: e.target.value})} placeholder="77.2090" />
-                 </div>
-              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">STREAM URL</label>
                 <input type="text" className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={formData.stream_url} onChange={e => setFormData({...formData, stream_url: e.target.value})} placeholder="rtsp:// or http:// video feed" />
@@ -217,35 +214,54 @@ export default function CameraManagement() {
                         </div>
                       </div>
                       
+                      {/* Live Feed Preview Box */}
+                      <div className="w-full h-40 bg-slate-950 rounded-xl mb-4 mt-2 overflow-hidden border border-slate-700/50 shadow-inner relative flex justify-center items-center group-hover:border-blue-500/50 transition-all">
+                         {cam.status === 'ONLINE' ? (
+                            <>
+                               <img src={`http://localhost:8000/api/video/${cam.id}/stream`} alt={`Stream ${cam.camera_code}`} className="w-full h-full object-cover opacity-90" />
+                               <div className="absolute top-2 left-2 bg-red-600/90 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> REC</div>
+                            </>
+                         ) : (
+                            <div className="flex flex-col items-center justify-center text-slate-500">
+                               <CamIcon className="w-8 h-8 mb-2 opacity-30" />
+                               <span className="text-[10px] font-mono tracking-widest font-bold">STREAM UNAVAILABLE</span>
+                            </div>
+                         )}
+                      </div>
+                      
                       {/* Details */}
-                      <div className="mt-auto space-y-2 text-sm text-slate-400">
-                        <div className="flex items-center gap-2">
-                           <MapPin className="w-4 h-4 text-blue-400/50" />
-                           <span className="truncate">{cam.location || 'Unknown Location'}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                           <Signal className="w-4 h-4 text-blue-400/50" />
-                           <span className="truncate font-mono text-xs">{cam.stream_url ? (cam.stream_url.length > 25 ? cam.stream_url.substring(0,25) + '...' : cam.stream_url) : 'No Feed Connected'}</span>
-                        </div>
-                        {(cam.latitude && cam.longitude) && (
-                           <div className="text-[10px] font-mono text-slate-500 mt-3 pt-3 border-t border-slate-700/50 flex justify-between">
-                              <span>LAT: {cam.latitude}</span>
-                              <span>LNG: {cam.longitude}</span>
+                      <div className="space-y-2 text-sm text-slate-400 mt-2">
+                        <div className="flex items-center justify-between border-t border-slate-700/30 pt-3">
+                           <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-blue-400/50" />
+                              <span className="truncate text-xs font-bold">{cam.location || 'Unknown Location'}</span>
                            </div>
-                        )}
+                           <div className="flex items-center gap-2">
+                              <Signal className="w-4 h-4 text-blue-400/50" />
+                              <span className="truncate font-mono text-[9px] uppercase font-bold text-slate-500">
+                                 {cam.stream_url ? 'RTSP ACTIVE' : 'NO URL'}
+                              </span>
+                           </div>
+                        </div>
                       </div>
 
                       {/* Explicit Admin Controls Bar */}
                       {user?.role === 'ADMIN' && (
-                        <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center -mx-5 -mb-5 px-5 py-3 bg-slate-900/50">
-                           <span className="text-[10px] font-bold text-slate-500 tracking-wider">ADMIN CONTROLS</span>
-                           <div className="flex gap-2">
-                              <button onClick={() => setEditingCamera(cam)} className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-3 py-1.5 rounded-lg flex items-center text-[10px] font-bold transition-all border border-blue-500/20 hover:border-blue-500/50 shadow-md">
-                                 <Edit className="w-3 h-3 mr-1.5" /> EDIT
-                              </button>
-                              <button onClick={() => handleDelete(cam.id)} className="bg-red-600/20 hover:bg-red-600/40 text-red-400 px-3 py-1.5 rounded-lg flex items-center text-[10px] font-bold transition-all border border-red-500/20 hover:border-red-500/50 shadow-md">
-                                 <Trash2 className="w-3 h-3 mr-1.5" /> DELETE
-                              </button>
+                        <div className="mt-4 pt-3 border-t border-slate-700/50 flex flex-col -mx-5 -mb-5 px-5 py-3 bg-slate-900/50 gap-2">
+                           
+                           {/* Primary AI Activation Action */}
+                           <button onClick={() => handleStartLiveAI(cam.id)} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-3 py-2 rounded-lg flex items-center justify-center text-[11px] font-bold tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)]">
+                             <Brain className="w-4 h-4 mr-2" /> ACTIVATE AI RUNTIME
+                           </button>
+
+                           {/* Secondary Config Controls */}
+                           <div className="flex gap-2 mt-1">
+                               <button onClick={() => setEditingCamera(cam)} className="flex-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all border border-blue-500/20 hover:border-blue-500/50">
+                                  <Edit className="w-3 h-3 mr-1.5" /> VERIFY
+                               </button>
+                               <button onClick={() => handleDelete(cam.id)} className="flex-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 px-3 py-1.5 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all border border-red-500/20 hover:border-red-500/50">
+                                  <Trash2 className="w-3 h-3 mr-1.5" /> TERMINATE
+                               </button>
                            </div>
                         </div>
                       )}
@@ -290,16 +306,7 @@ export default function CameraManagement() {
                 <label className="block text-xs font-bold text-slate-400 mb-1">LOCATION DESCRIPTION</label>
                 <input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.location || ''} onChange={e => setEditingCamera({...editingCamera, location: e.target.value})} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">LATITUDE</label>
-                  <input required type="number" step="any" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.latitude || ''} onChange={e => setEditingCamera({...editingCamera, latitude: e.target.value})} />
-                 </div>
-                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">LONGITUDE</label>
-                  <input required type="number" step="any" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.longitude || ''} onChange={e => setEditingCamera({...editingCamera, longitude: e.target.value})} />
-                 </div>
-              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">STREAM URL</label>
                 <input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.stream_url || ''} onChange={e => setEditingCamera({...editingCamera, stream_url: e.target.value})} />
