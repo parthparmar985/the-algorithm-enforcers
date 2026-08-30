@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getCameras, createCamera, deleteCamera } from '../services/cameraService';
+import { getCameras, createCamera, deleteCamera, updateCamera } from '../services/cameraService';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Camera as CamIcon, Search, Filter, Signal, MapPin } from 'lucide-react';
+import { Plus, Trash2, Edit, Camera as CamIcon, Search, Filter, Signal, MapPin, X } from 'lucide-react';
 
 export default function CameraManagement() {
   const [cameras, setCameras] = useState([]);
+  const [editingCamera, setEditingCamera] = useState(null);
   const [filteredCameras, setFilteredCameras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,6 +70,25 @@ export default function CameraManagement() {
       fetchCameras();
     } catch (err) {
       console.error("Failed to delete camera");
+    }
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    try {
+      await updateCamera(editingCamera.id, {
+        camera_name: editingCamera.camera_name,
+        camera_code: editingCamera.camera_code,
+        location: editingCamera.location,
+        latitude: editingCamera.latitude ? parseFloat(editingCamera.latitude) : null,
+        longitude: editingCamera.longitude ? parseFloat(editingCamera.longitude) : null,
+        stream_url: editingCamera.stream_url,
+        status: editingCamera.status
+      });
+      setEditingCamera(null);
+      fetchCameras();
+    } catch (err) {
+      console.error("Failed to update camera");
     }
   };
 
@@ -193,11 +213,7 @@ export default function CameraManagement() {
                              {cam.status === 'ONLINE' && <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span>}
                              {cam.status}
                            </span>
-                           {user?.role === 'ADMIN' && (
-                            <button onClick={() => handleDelete(cam.id)} className="text-slate-500 hover:text-red-500 p-1.5 bg-slate-900 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                           )}
+                           {/* Status Badge */}
                         </div>
                       </div>
                       
@@ -218,6 +234,21 @@ export default function CameraManagement() {
                            </div>
                         )}
                       </div>
+
+                      {/* Explicit Admin Controls Bar */}
+                      {user?.role === 'ADMIN' && (
+                        <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center -mx-5 -mb-5 px-5 py-3 bg-slate-900/50">
+                           <span className="text-[10px] font-bold text-slate-500 tracking-wider">ADMIN CONTROLS</span>
+                           <div className="flex gap-2">
+                              <button onClick={() => setEditingCamera(cam)} className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-3 py-1.5 rounded-lg flex items-center text-[10px] font-bold transition-all border border-blue-500/20 hover:border-blue-500/50 shadow-md">
+                                 <Edit className="w-3 h-3 mr-1.5" /> EDIT
+                              </button>
+                              <button onClick={() => handleDelete(cam.id)} className="bg-red-600/20 hover:bg-red-600/40 text-red-400 px-3 py-1.5 rounded-lg flex items-center text-[10px] font-bold transition-all border border-red-500/20 hover:border-red-500/50 shadow-md">
+                                 <Trash2 className="w-3 h-3 mr-1.5" /> DELETE
+                              </button>
+                           </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -227,6 +258,61 @@ export default function CameraManagement() {
         </div>
 
       </div>
+
+      {/* Edit Camera Modal */}
+      {editingCamera && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700/50 rounded-3xl p-6 w-full max-w-lg shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-enter relative">
+            <button onClick={() => setEditingCamera(null)} className="absolute top-6 right-6 text-slate-500 hover:text-white transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-xl font-bold mb-6 flex items-center"><Edit className="w-5 h-5 mr-2 text-blue-400" /> Edit Node Configuration</h2>
+            
+            <form onSubmit={handleUpdate} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1">CAMERA NAME</label>
+                <input required type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.camera_name} onChange={e => setEditingCamera({...editingCamera, camera_name: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">CODE</label>
+                  <input required type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.camera_code} onChange={e => setEditingCamera({...editingCamera, camera_code: e.target.value})} />
+                 </div>
+                 <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">STATUS</label>
+                  <select className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.status} onChange={e => setEditingCamera({...editingCamera, status: e.target.value})}>
+                    <option value="OFFLINE">Offline</option>
+                    <option value="ONLINE">Online</option>
+                  </select>
+                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1">LOCATION DESCRIPTION</label>
+                <input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.location || ''} onChange={e => setEditingCamera({...editingCamera, location: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">LATITUDE</label>
+                  <input required type="number" step="any" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.latitude || ''} onChange={e => setEditingCamera({...editingCamera, latitude: e.target.value})} />
+                 </div>
+                 <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">LONGITUDE</label>
+                  <input required type="number" step="any" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.longitude || ''} onChange={e => setEditingCamera({...editingCamera, longitude: e.target.value})} />
+                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1">STREAM URL</label>
+                <input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.stream_url || ''} onChange={e => setEditingCamera({...editingCamera, stream_url: e.target.value})} />
+              </div>
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setEditingCamera(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 p-3 rounded-xl font-bold transition-all">Cancel</button>
+                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 p-3 rounded-xl font-bold shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

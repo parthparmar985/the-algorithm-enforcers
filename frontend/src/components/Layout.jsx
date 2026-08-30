@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Camera, LayoutDashboard, Video, Search, LogOut, Bell, Command, UserCircle, ShieldAlert } from 'lucide-react';
+import { BookOpen, Camera, LayoutDashboard, Video, Search, LogOut, Bell, Command, UserCircle, ShieldAlert, Activity, Database } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
@@ -8,10 +8,12 @@ export default function Layout({ children }) {
   
   const navItems = [
     { label: 'Overview', path: '/dashboard', icon: LayoutDashboard },
-    { label: 'Live Cameras', path: '/cameras', icon: Camera },
+    { label: 'Live Monitor', path: '/live', icon: Activity },
+    { label: 'Manage Cameras', path: '/cameras', icon: Camera },
     { label: 'Video Inference', path: '/video', icon: Video },
     { label: 'Investigation', path: '/search', icon: Search },
     { label: 'Watchlist', path: '/watchlist', icon: ShieldAlert },
+    { label: 'View Records', path: '/records', icon: Database },
     { label: 'System Guide', path: '/guide', icon: BookOpen },
   ];
 

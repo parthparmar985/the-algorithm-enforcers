@@ -13,9 +13,11 @@ const ProtectedRoute = ({ children }) => {
 };
 
 import DashboardOverview from './pages/DashboardOverview';
+import LiveMonitor from './pages/LiveMonitor';
 import Investigation from './pages/Investigation';
 import HelpGuide from './pages/HelpGuide';
 import WatchlistManagement from './pages/WatchlistManagement';
+import ViewRecords from './pages/ViewRecords';
 import Layout from './components/Layout';
 
 const ProtectedLayout = ({ children }) => (
@@ -50,6 +52,14 @@ function App() {
             } 
           />
           <Route 
+            path="/live" 
+            element={
+              <ProtectedLayout>
+                <LiveMonitor />
+              </ProtectedLayout>
+            } 
+          />
+          <Route 
             path="/video" 
             element={
               <ProtectedLayout>
@@ -62,6 +72,14 @@ function App() {
             element={
               <ProtectedLayout>
                 <Investigation />
+              </ProtectedLayout>
+            }
+          />
+          <Route
+            path="/records"
+            element={
+              <ProtectedLayout>
+                <ViewRecords />
               </ProtectedLayout>
             }
           />
