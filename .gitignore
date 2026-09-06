@@ -15,6 +15,7 @@ env/
 # Build directories
 build/
 dist/
+backend/output/
 *.egg-info/
 
 # Logs and databases
@@ -30,3 +31,18 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# added by parth dave
+backend/.env
+backend/venv/
+frontend/node_modules/
+frontend/dist/
+
+backend/uploads/
+backend/output/
+
+*.pdf
+*.zip
+
+__pycache__/
+*.pyc

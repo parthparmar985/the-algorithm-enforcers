@@ -23,7 +23,7 @@ from app.models.camera import Camera
 from app.models.detection import Detection
 from app.models.vehicle import Vehicle
 from app.models.alert import Alert
-from app.models.incident import Incident
+from app.models.evidence import Investigation, Evidence
 
 try:
     Base.metadata.create_all(bind=app_engine)

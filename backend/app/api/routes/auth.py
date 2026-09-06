@@ -22,7 +22,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         name=user.name,
         email=user.email,
         password_hash=hashed_password,
-        role=user.role
+        role="OPERATOR"
     )
     db.add(new_user)
     db.commit()

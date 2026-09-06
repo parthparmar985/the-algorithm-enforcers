@@ -7,9 +7,19 @@ from sqlalchemy.orm import Session
 from ..database.database import get_db
 from ..models.user import User
 
-SECRET_KEY = os.getenv("JWT_SECRET", "change_this_secret")
+SECRET_KEY = os.getenv("JWT_SECRET")
+if not SECRET_KEY:
+    import warnings
+    import secrets
+    SECRET_KEY = secrets.token_hex(32)
+    warnings.warn(
+        "JWT_SECRET is not configured in environment variables! "
+        "Generated secure ephemeral session key for current server run."
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 1 day
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 

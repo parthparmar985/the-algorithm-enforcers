@@ -11,6 +11,7 @@ import time
 import numpy as np
 from fastapi.responses import StreamingResponse
 from ...models.camera import Camera
+from ...services.camera_url import normalized_capture_url, validate_stream_url
 
 router = APIRouter()
 
@@ -44,14 +45,21 @@ def process_video(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if not os.path.exists(file_path):
+    # Path traversal protection: resolve absolute path and check if within UPLOAD_DIR
+    abs_upload_dir = os.path.abspath(UPLOAD_DIR)
+    abs_file_path = os.path.abspath(file_path)
+    
+    if not abs_file_path.startswith(abs_upload_dir):
+        raise HTTPException(status_code=400, detail="Invalid video path: path traversal forbidden")
+
+    if not os.path.exists(abs_file_path):
         raise HTTPException(status_code=404, detail="Video file not found")
         
     # We instantiate DetectionService lazily because it loads heavy ML models
     from ...services.detection_service import DetectionService
     detector_service = DetectionService()
     
-    background_tasks.add_task(detector_service.process_video_file, camera_id, file_path)
+    background_tasks.add_task(detector_service.process_video_file, camera_id, abs_file_path)
     return {"message": "AI processing started", "status": "processing"}
 
 @router.post("/{camera_id}/start-live")
@@ -62,12 +70,15 @@ def start_live_inference(
     current_user: User = Depends(get_current_user)
 ):
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
-    if not camera or not camera.stream_url:
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    try:
+        stream_url = validate_stream_url(camera.stream_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not stream_url:
         raise HTTPException(status_code=400, detail="Camera has no valid Stream URL configured.")
-        
-    stream_url = camera.stream_url
-    if stream_url.endswith(":8080") or stream_url.endswith(":8080/"):
-        stream_url = stream_url.rstrip('/') + '/video'
+    stream_url = normalized_capture_url(stream_url)
         
     from ...services.detection_service import DetectionService
     detector_service = DetectionService()
@@ -114,59 +125,58 @@ def generate_mock_frames(camera: Camera):
         time.sleep(1/15)
 
 @router.get("/{camera_id}/stream")
-def stream_video(camera_id: int, db: Session = Depends(get_db)):
+def stream_video(
+    camera_id: int, 
+    db: Session = Depends(get_db)
+):
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
         
     def generate_real_frames(url):
-        # Auto-correct common IP Webcam URLs missing the /video endpoint
-        if url.endswith(":8080") or url.endswith(":8080/"):
-            url = url.rstrip('/') + '/video'
-            
+        url = normalized_capture_url(url)
         cap = cv2.VideoCapture(url)
-        
-        # If the connection fails, yield a red Error Frame instead of crashing
-        if not cap.isOpened():
-            frame = np.zeros((360, 640, 3), dtype=np.uint8)
-            # Create a striking red error screen
-            frame[:] = (0, 0, 50) # Dark red bg
-            cv2.putText(frame, "CCTV CONNECTION FAILED", (80, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-            cv2.putText(frame, f"URL: {url}", (20, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(frame, "Please verify device is active on network", (80, 260), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-            
-            ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-            if ret:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-            return
+        try:
+            # If the connection fails, yield a red Error Frame instead of crashing
+            if not cap.isOpened():
+                frame = np.zeros((360, 640, 3), dtype=np.uint8)
+                frame[:] = (0, 0, 50)
+                cv2.putText(frame, "CCTV CONNECTION FAILED", (80, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                cv2.putText(frame, "Please verify device is active on network", (80, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if ret:
+                    yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                return
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
             
-            # Resize for optimal dashboard streaming bandwidth
-            frame = cv2.resize(frame, (640, 360))
+                # Resize for optimal dashboard streaming bandwidth
+                frame = cv2.resize(frame, (640, 360))
             
             # Overlay basic node info for authenticity
-            cam_text = f"LIVE | {camera.camera_code}"
-            cv2.putText(frame, cam_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cam_text = f"LIVE | {camera.camera_code}"
+                cv2.putText(frame, cam_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
-            ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
-            if ret:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                if ret:
+                    yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
             
             # Limit fps to save network overload in browsers
-            time.sleep(1/15)
-            
-        cap.release()
+                time.sleep(1/15)
+        finally:
+            cap.release()
 
     # If the camera has a real Stream URL defined in the database, capture the real feed!
-    if camera.stream_url and camera.stream_url.startswith(("rtsp://", "http://", "https://")):
-        # We run the real capture
-        return StreamingResponse(generate_real_frames(camera.stream_url), media_type="multipart/x-mixed-replace; boundary=frame")
+    if camera.stream_url:
+        try:
+            stream_url = validate_stream_url(camera.stream_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return StreamingResponse(generate_real_frames(stream_url), media_type="multipart/x-mixed-replace; boundary=frame")
         
     # Otherwise fallback to the simulation engine for hackathon demo
     return StreamingResponse(generate_mock_frames(camera), media_type="multipart/x-mixed-replace; boundary=frame")
+

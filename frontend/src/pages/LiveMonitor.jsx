@@ -1,24 +1,39 @@
 import { useState, useEffect } from 'react';
-import { getCameras } from '../services/cameraService';
-import { Activity, Signal, MapPin } from 'lucide-react';
+import { checkCameraHealth, getCameras } from '../services/cameraService';
+import { Activity, Signal, MapPin, RefreshCw } from 'lucide-react';
+
+const healthColor = { ONLINE: 'text-emerald-400', DEGRADED: 'text-amber-300', OFFLINE: 'text-red-400', UNKNOWN: 'text-slate-300' };
+const dotColor = { ONLINE: 'bg-emerald-400', DEGRADED: 'bg-amber-400', OFFLINE: 'bg-red-500', UNKNOWN: 'bg-slate-500' };
+const showTime = value => value ? new Date(`${value}Z`).toLocaleString() : 'Never';
 
 export default function LiveMonitor() {
   const [cameras, setCameras] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(new Set());
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchCameras();
+    const timer = window.setInterval(fetchCameras, 30000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const fetchCameras = async () => {
     try {
       const data = await getCameras();
-      setCameras(data.filter(c => c.status === 'ONLINE'));
+      setCameras(data);
     } catch (error) {
       console.error("Failed to fetch cameras");
     } finally {
       setLoading(false);
     }
+  };
+
+  const retry = async id => {
+    setChecking(current => new Set(current).add(id)); setError('');
+    try { await checkCameraHealth(id); await fetchCameras(); }
+    catch (requestError) { setError(requestError.response?.data?.detail || 'Health check failed.'); }
+    finally { setChecking(current => { const next = new Set(current); next.delete(id); return next; }); }
   };
 
   return (
@@ -33,6 +48,7 @@ export default function LiveMonitor() {
           <p className="text-slate-400 text-sm mt-1">Real-time dynamic monitoring of {cameras.length} connected endpoints.</p>
         </div>
       </div>
+      {error && <p role="alert" className="mb-6 p-3 rounded-xl border border-red-500/40 bg-red-900/20 text-red-200">{error}</p>}
 
       {loading ? (
         <div className="flex justify-center items-center h-64 text-slate-400">
@@ -45,7 +61,7 @@ export default function LiveMonitor() {
             <div className="py-24 text-center bg-slate-800/30 rounded-3xl border-dashed border-2 border-slate-700 flex flex-col items-center justify-center">
               <Signal className="w-16 h-16 text-slate-600 mb-4 opacity-50" />
               <h3 className="text-xl font-bold text-slate-400">0 Live Feeds Found</h3>
-              <p className="text-slate-500 mt-2">Make sure at least one camera is registered and marked ONLINE.</p>
+              <p className="text-slate-500 mt-2">Register a camera to begin health monitoring.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -55,22 +71,18 @@ export default function LiveMonitor() {
                   {/* MJPEG Stream Viewer */}
                   <div className="absolute inset-0 bg-black flex items-center justify-center z-0">
                     {/* The API directly yields an MJPEG stream, so an img tag loops beautifully */}
-                    <img 
-                      src={`http://localhost:8000/api/video/${cam.id}/stream`}
-                      alt={`Live ${cam.camera_code}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
+                    {cam.stream_available && ['ONLINE', 'DEGRADED'].includes(cam.health_status) ? <img src={`http://localhost:8000/api/video/${cam.id}/stream`} alt={`Live ${cam.camera_code}`} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} /> : <div className="text-center px-5 z-10"><Signal className="w-10 h-10 mx-auto text-slate-600 mb-2" /><p className={`font-bold ${healthColor[cam.health_status] || healthColor.UNKNOWN}`}>{cam.health_status || 'UNKNOWN'}</p><p className="text-xs text-slate-400 mt-1">{cam.health_message || 'Health check has not run.'}</p><p className="text-xs text-slate-500 mt-1">Last successful frame: {showTime(cam.last_frame_at)}</p><button type="button" onClick={() => retry(cam.id)} disabled={checking.has(cam.id)} className="mt-3 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-lg text-xs font-bold inline-flex items-center gap-2"><RefreshCw className={`w-3 h-3 ${checking.has(cam.id) ? 'animate-spin' : ''}`} />{checking.has(cam.id) ? 'Checking...' : 'Retry / Check Health'}</button></div>}
                   </div>
 
                   {/* Overlays / Tag Lines */}
                   <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent z-10 flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
+                        <span className={`w-2.5 h-2.5 rounded-full ${dotColor[cam.health_status] || dotColor.UNKNOWN} ${cam.health_status === 'ONLINE' ? 'animate-pulse' : ''}`}></span>
                         <span className="font-bold tracking-widest uppercase text-white drop-shadow-md">CAM-{cam.camera_code}</span>
                       </div>
                       <h3 className="font-medium text-slate-300 text-sm mt-1 drop-shadow-md">{cam.camera_name}</h3>
+                      <p className={`text-xs font-bold ${healthColor[cam.health_status] || healthColor.UNKNOWN}`}>{cam.health_status || 'UNKNOWN'}{cam.latency_ms == null ? '' : ` · ${cam.latency_ms} ms`}</p>
                     </div>
                     
                     <div className="px-3 py-1 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg flex items-center gap-2">

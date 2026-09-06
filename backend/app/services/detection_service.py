@@ -1,25 +1,25 @@
 from sqlalchemy.orm import Session
 from ..models.detection import Detection
 from ..models.vehicle import Vehicle
-from ..ai.detector import VideoAnalyzer
-from ..ai.anpr import ANPREngine
+from ..ai.detector import get_detector
+from ..ai.anpr import get_anpr
 from datetime import datetime
 import cv2
 import json
 import os
 from uuid import uuid4
-import asyncio
 from ..models.alert import Alert
 from ..models.watchlist import Watchlist
 from ..ai.activity_detector import RuleEngine
 from ..websocket.manager import manager
 from ..database.database import SessionLocal
+from ..ai.plate_utils import normalize_plate
 
 class DetectionService:
     def __init__(self):
-        self.detector = VideoAnalyzer()
+        self.detector = get_detector()
         self.rule_engine = RuleEngine()
-        self.anpr = ANPREngine()
+        self.anpr = get_anpr()
         
         self.snapshot_dir = os.path.join(os.getenv("UPLOAD_DIR", "uploads"), "snapshots")
         if not os.path.exists(self.snapshot_dir):
@@ -35,6 +35,8 @@ class DetectionService:
                 return
                 
             fps = cap.get(cv2.CAP_PROP_FPS)
+            if not fps or fps <= 0:
+                fps = 25.0
             process_fps = int(os.getenv("PROCESS_FPS", 15))
             if process_fps <= 0 or process_fps > fps:
                 process_fps = fps
@@ -69,7 +71,8 @@ class DetectionService:
                     plate_text = None
                     plate_conf = 0.0
                     
-                    if cls_name in ["car", "truck", "bus", "motorcycle"]:
+                    plate_raw_text = None
+                    if cls_name in ["car", "truck", "bus", "motorcycle"] and track_id is not None:
                         run_anpr = False
                         
                         # Only run heavy OCR if this is a new object, or if we haven't found a high-confidence plate yet.
@@ -79,14 +82,15 @@ class DetectionService:
                             run_anpr = True
                         else:
                             v = active_vehicles[track_id]
-                            if (not v.plate_confidence or v.plate_confidence < 0.85) and (frame_idx % int(frame_skip * 3) == 0):
+                            interval = max(1, int(os.getenv("ANPR_RETRY_INTERVAL", "10")))
+                            if (not v.plate_confidence or v.plate_confidence < 0.85) and (frame_idx % int(frame_skip * interval) == 0):
                                 run_anpr = True
                                 
                         if run_anpr:
-                            plate_text, plate_conf = self.anpr.extract_number_plate(frame, bbox)
+                            plate_text, plate_conf, plate_raw_text = self.anpr.extract_number_plate_with_audit(frame, bbox)
                         
                     snapshot_path = None
-                    if plate_text or (track_id and track_id not in active_vehicles):
+                    if plate_text or (track_id is not None and track_id not in active_vehicles):
                         snapshot_filename = f"snap_{camera_id}_{track_id}_{uuid4()}.jpg"
                         snapshot_path = os.path.join(self.snapshot_dir, snapshot_filename)
                         
@@ -115,10 +119,12 @@ class DetectionService:
                     )
                     db.add(db_detection)
                     
-                    if cls_name in ["car", "truck", "bus", "motorcycle"] and track_id:
+                    if cls_name in ["car", "truck", "bus", "motorcycle"] and track_id is not None:
                         if track_id in active_vehicles:
                             v = active_vehicles[track_id]
                             v.last_seen = datetime.utcnow()
+                            if plate_raw_text and (not v.plate_raw_text or plate_conf > (v.plate_confidence or 0)):
+                                v.plate_raw_text = plate_raw_text
                             if plate_text and (not v.number_plate or plate_conf > (v.plate_confidence or 0)):
                                 v.number_plate = plate_text
                                 v.plate_confidence = plate_conf
@@ -129,6 +135,7 @@ class DetectionService:
                                 tracking_id=track_id,
                                 vehicle_type=cls_name,
                                 number_plate=plate_text,
+                                plate_raw_text=plate_raw_text,
                                 plate_confidence=plate_conf,
                                 first_seen=datetime.utcnow(),
                                 last_seen=datetime.utcnow(),
@@ -139,7 +146,8 @@ class DetectionService:
                             
                         # Continuous Watchlist Matching
                         if plate_text and plate_conf > 0.65:
-                            match = db.query(Watchlist).filter(Watchlist.registration_number == plate_text, Watchlist.status == "ACTIVE").first()
+                            normalized_plate = normalize_plate(plate_text)
+                            match = db.query(Watchlist).filter(Watchlist.registration_number == normalized_plate, Watchlist.status == "ACTIVE").first()
                             if match:
                                 # Fire immediate alert for Watchlist match
                                 alert_msg = f"Watchlist Match! Priority: {match.priority}. Category: {match.category}"
@@ -165,7 +173,7 @@ class DetectionService:
                                     "snapshot": db_alert.snapshot_path
                                 }
                                 try:
-                                    asyncio.run(manager.broadcast_alert(ws_payload))
+                                    manager.broadcast_alert_sync(ws_payload)
                                 except Exception:
                                     pass
                                     
@@ -196,7 +204,7 @@ class DetectionService:
                         "snapshot": db_alert.snapshot_path
                     }
                     try:
-                        asyncio.run(manager.broadcast_alert(ws_payload))
+                        manager.broadcast_alert_sync(ws_payload)
                     except Exception as e:
                         print("Broadcast error:", e)
 
@@ -212,14 +220,14 @@ class DetectionService:
                         "total": total_frames
                     }
                     try:
-                        asyncio.run(manager.broadcast_progress(ws_payload))
+                        manager.broadcast_progress_sync(ws_payload)
                     except Exception as e:
                         pass
                 
             # Send completing progress event
             if total_frames > 0:
                 try:
-                    asyncio.run(manager.broadcast_progress({"type": "PROGRESS", "percentage": 100}))
+                    manager.broadcast_progress_sync({"type": "PROGRESS", "percentage": 100})
                 except Exception:
                     pass
                 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Index
 from datetime import datetime
 from ..database.database import Base
 
@@ -15,3 +15,5 @@ class Detection(Base):
     frame_number = Column(Integer)
     bounding_box = Column(Text) # JSON string
     snapshot_path = Column(String(500), nullable=True)
+
+    __table_args__ = (Index("ix_detections_camera_timestamp", "camera_id", "timestamp"),)

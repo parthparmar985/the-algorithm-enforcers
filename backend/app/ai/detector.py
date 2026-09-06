@@ -2,6 +2,14 @@ import cv2
 import os
 from ultralytics import YOLO
 
+_detector_instance = None
+
+def get_detector():
+    global _detector_instance
+    if _detector_instance is None:
+        _detector_instance = VideoAnalyzer()
+    return _detector_instance
+
 class VideoAnalyzer:
     def __init__(self):
         model_path = os.getenv("YOLO_MODEL", "yolo11n.pt")
@@ -49,3 +57,4 @@ class VideoAnalyzer:
                 })
                 
         return detections
+

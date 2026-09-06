@@ -19,3 +19,13 @@ export const deleteCamera = async (id) => {
   const result = await api.delete(`/cameras/${id}`);
   return result.data;
 };
+
+export const checkCameraHealth = async (id) => {
+  const result = await api.post(`/cameras/${id}/health-check`);
+  return result.data;
+};
+
+export const checkAllCameraHealth = async () => {
+  const result = await api.post('/cameras/health-check-all');
+  return result.data;
+};
