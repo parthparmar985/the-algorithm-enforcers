@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
-import { getCameras, createCamera, deleteCamera, updateCamera } from '../services/cameraService';
+import { getCameras, createCamera, deleteCamera, updateCamera, checkCameraHealth, checkAllCameraHealth } from '../services/cameraService';
 import { startLiveInference } from '../services/videoService';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Edit, Camera as CamIcon, Search, Filter, Signal, MapPin, X, Brain } from 'lucide-react';
+import { Plus, Trash2, Edit, Camera as CamIcon, Search, Filter, Signal, MapPin, X, Brain, RefreshCw } from 'lucide-react';
+
+const healthStyle = {
+  ONLINE: 'bg-green-500/10 text-green-400 border-green-500/30',
+  DEGRADED: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+  OFFLINE: 'bg-red-500/10 text-red-400 border-red-500/30',
+  UNKNOWN: 'bg-slate-700 text-slate-300 border-slate-600',
+};
+const showTime = value => value ? new Date(`${value}Z`).toLocaleString() : 'Never';
 
 export default function CameraManagement() {
   const [cameras, setCameras] = useState([]);
@@ -11,6 +19,9 @@ export default function CameraManagement() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [checking, setChecking] = useState(new Set());
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [healthMessage, setHealthMessage] = useState('');
   
   const { user } = useAuth();
   
@@ -20,12 +31,14 @@ export default function CameraManagement() {
 
   useEffect(() => {
     fetchCameras();
+    const timer = window.setInterval(fetchCameras, 30000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
     let result = cameras;
     if (statusFilter !== 'ALL') {
-      result = result.filter(c => c.status === statusFilter);
+      result = result.filter(c => c.health_status === statusFilter);
     }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -81,6 +94,31 @@ export default function CameraManagement() {
     }
   }
 
+  const handleHealthCheck = async (id) => {
+    setChecking(current => new Set(current).add(id));
+    setHealthMessage('');
+    try {
+      const result = await checkCameraHealth(id);
+      setHealthMessage(`${result.camera_name}: ${result.health_status} - ${result.message}`);
+      await fetchCameras();
+    } catch (err) {
+      setHealthMessage(err.response?.data?.detail || 'Camera health check failed.');
+    } finally {
+      setChecking(current => { const next = new Set(current); next.delete(id); return next; });
+    }
+  };
+
+  const handleCheckAll = async () => {
+    setCheckingAll(true); setHealthMessage('');
+    try {
+      const result = await checkAllCameraHealth();
+      setHealthMessage(`Checked ${result.checked}/${result.total}: ${result.online} online, ${result.degraded} degraded, ${result.offline} offline, ${result.unknown} unknown.`);
+      await fetchCameras();
+    } catch (err) {
+      setHealthMessage(err.response?.data?.detail || 'Bulk health check failed.');
+    } finally { setCheckingAll(false); }
+  };
+
   const handleUpdate = async (e) => {
     e.preventDefault();
     try {
@@ -132,13 +170,18 @@ export default function CameraManagement() {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="bg-slate-900/80 border border-slate-600 rounded-xl pl-10 pr-8 py-2.5 text-slate-200 focus:outline-none focus:border-blue-500 transition-colors appearance-none cursor-pointer"
             >
-              <option value="ALL">All Status</option>
+              <option value="ALL">All Health States</option>
               <option value="ONLINE">Online</option>
+              <option value="DEGRADED">Degraded</option>
               <option value="OFFLINE">Offline</option>
+              <option value="UNKNOWN">Unknown</option>
             </select>
           </div>
+          <button type="button" onClick={handleCheckAll} disabled={checkingAll || checking.size > 0} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 whitespace-nowrap"><RefreshCw className={`w-4 h-4 ${checkingAll ? 'animate-spin' : ''}`} />{checkingAll ? 'Checking...' : 'Check All'}</button>
         </div>
       </div>
+
+      {healthMessage && <p role="status" aria-live="polite" className="mb-6 p-3 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-200">{healthMessage}</p>}
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
         
@@ -157,7 +200,7 @@ export default function CameraManagement() {
                   <input required type="text" className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={formData.camera_code} onChange={e => setFormData({...formData, camera_code: e.target.value})} placeholder="CAM-01" />
                  </div>
                  <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">STATUS</label>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">CONFIGURED STATE</label>
                   <select className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
                     <option value="OFFLINE">Offline</option>
                     <option value="ONLINE">Online</option>
@@ -206,9 +249,9 @@ export default function CameraManagement() {
                            <h3 className="font-bold text-lg text-slate-100 mt-2 truncate w-full">{cam.camera_name}</h3>
                         </div>
                         <div className="flex flex-col items-end gap-2">
-                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase flex items-center gap-1 ${cam.status === 'ONLINE' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-slate-700 text-slate-400 border border-slate-600'}`}>
-                             {cam.status === 'ONLINE' && <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span>}
-                             {cam.status}
+                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase flex items-center gap-1 border ${healthStyle[cam.health_status] || healthStyle.UNKNOWN}`}>
+                             <span className={`w-1.5 h-1.5 rounded-full ${cam.health_status === 'ONLINE' ? 'bg-green-400 animate-pulse' : cam.health_status === 'DEGRADED' ? 'bg-amber-400' : cam.health_status === 'OFFLINE' ? 'bg-red-400' : 'bg-slate-400'}`}></span>
+                             {cam.health_status || 'UNKNOWN'}
                            </span>
                            {/* Status Badge */}
                         </div>
@@ -216,7 +259,7 @@ export default function CameraManagement() {
                       
                       {/* Live Feed Preview Box */}
                       <div className="w-full h-40 bg-slate-950 rounded-xl mb-4 mt-2 overflow-hidden border border-slate-700/50 shadow-inner relative flex justify-center items-center group-hover:border-blue-500/50 transition-all">
-                         {cam.status === 'ONLINE' ? (
+                         {cam.stream_available && ['ONLINE', 'DEGRADED'].includes(cam.health_status) ? (
                             <>
                                <img src={`http://localhost:8000/api/video/${cam.id}/stream`} alt={`Stream ${cam.camera_code}`} className="w-full h-full object-cover opacity-90" />
                                <div className="absolute top-2 left-2 bg-red-600/90 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> REC</div>
@@ -243,6 +286,16 @@ export default function CameraManagement() {
                               </span>
                            </div>
                         </div>
+                        <div className="grid grid-cols-2 gap-2 text-[10px] border-t border-slate-700/30 pt-2">
+                          <span>Configured: <strong className="text-slate-300">{cam.status}</strong></span>
+                          <span>Failures: <strong className="text-slate-300">{cam.consecutive_failures || 0}</strong></span>
+                          <span>Last checked: <strong className="text-slate-300">{showTime(cam.last_health_check)}</strong></span>
+                          <span>Last online: <strong className="text-slate-300">{showTime(cam.last_online_at)}</strong></span>
+                          <span>Latency: <strong className="text-slate-300">{cam.latency_ms == null ? 'Not measured' : `${cam.latency_ms} ms`}</strong></span>
+                          <span>Last detection: <strong className="text-slate-300">{showTime(cam.last_detection_at)}</strong></span>
+                        </div>
+                        {cam.health_message && <p className={`text-xs ${cam.health_status === 'OFFLINE' ? 'text-red-300' : cam.health_status === 'DEGRADED' ? 'text-amber-300' : 'text-slate-400'}`}>{cam.health_message}</p>}
+                        <button type="button" onClick={() => handleHealthCheck(cam.id)} disabled={checkingAll || checking.has(cam.id)} className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 py-2 rounded-lg text-xs font-bold flex justify-center items-center gap-2"><RefreshCw className={`w-3 h-3 ${checking.has(cam.id) ? 'animate-spin' : ''}`} />{checking.has(cam.id) ? 'Checking...' : 'Check Health'}</button>
                       </div>
 
                       {/* Explicit Admin Controls Bar */}
@@ -295,7 +348,7 @@ export default function CameraManagement() {
                   <input required type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.camera_code} onChange={e => setEditingCamera({...editingCamera, camera_code: e.target.value})} />
                  </div>
                  <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">STATUS</label>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">CONFIGURED STATE</label>
                   <select className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-3 text-slate-200 focus:outline-none focus:border-blue-500" value={editingCamera.status} onChange={e => setEditingCamera({...editingCamera, status: e.target.value})}>
                     <option value="OFFLINE">Offline</option>
                     <option value="ONLINE">Online</option>

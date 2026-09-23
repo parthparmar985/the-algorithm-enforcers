@@ -9,6 +9,8 @@ export default function DashboardOverview() {
 
   useEffect(() => {
     fetchData();
+    const timer = window.setInterval(fetchData, 30000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const fetchData = async () => {
@@ -30,6 +32,7 @@ export default function DashboardOverview() {
   const chartData = Object.entries(vehicleObj).map(([key, val]) => ({
     name: (key || 'UNKNOWN').toUpperCase(), count: val
   }));
+  const health = data.camera_health || { total: data.summary.total_cameras, online: data.summary.online_cameras, degraded: 0, offline: 0, unknown: 0 };
 
   return (
     <div className="p-4 md:p-8 text-slate-200 min-h-screen bg-transparent max-w-7xl mx-auto">
@@ -69,6 +72,14 @@ export default function DashboardOverview() {
           </div>
           <p className="text-4xl font-bold text-red-400">{data.summary.critical_alerts}</p>
         </div>
+      </div>
+
+      <div className="glass-card p-6 rounded-3xl mb-12 border border-slate-700/60">
+        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Camera className="w-5 h-5 text-blue-400" />Camera Health</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[['Total', health.total, 'text-white'], ['Online', health.online, 'text-emerald-400'], ['Degraded', health.degraded, 'text-amber-400'], ['Offline', health.offline, 'text-red-400'], ['Unknown', health.unknown, 'text-slate-400']].map(([label, value, color]) => <div key={label} className="bg-slate-900/60 border border-slate-700 rounded-xl p-4"><p className="text-xs uppercase tracking-wider text-slate-500">{label}</p><p className={`text-3xl font-bold ${color}`}>{value}</p></div>)}
+        </div>
+        <p className="text-xs text-slate-500 mt-3">Health counts reflect measured stream reachability and valid frames, independent of configured camera status.</p>
       </div>
 
       <div className="glass-card p-8 rounded-3xl relative overflow-hidden">

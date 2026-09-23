@@ -26,6 +26,15 @@ class CameraUpdate(BaseModel):
 class CameraResponse(CameraBase):
     id: int
     created_at: datetime
+    health_status: str = "UNKNOWN"
+    last_health_check: Optional[datetime] = None
+    last_online_at: Optional[datetime] = None
+    last_frame_at: Optional[datetime] = None
+    latency_ms: Optional[int] = None
+    consecutive_failures: int = 0
+    stream_available: bool = False
+    health_message: Optional[str] = None
+    last_detection_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

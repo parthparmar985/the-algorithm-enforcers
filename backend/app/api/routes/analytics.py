@@ -13,7 +13,9 @@ router = APIRouter()
 @router.get("/summary")
 def get_analytics_summary(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     total_cameras = db.query(Camera).count()
-    online_cameras = db.query(Camera).filter(Camera.status == "ONLINE").count()
+    configured_online_cameras = db.query(Camera).filter(Camera.status == "ONLINE").count()
+    health_counts = {state: db.query(Camera).filter(Camera.health_status == state).count()
+                     for state in ["ONLINE", "DEGRADED", "OFFLINE", "UNKNOWN"]}
     
     total_detections_today = db.query(Detection).count() # Simplified for MVP
     total_vehicles_today = db.query(Vehicle).count()
@@ -28,12 +30,20 @@ def get_analytics_summary(db: Session = Depends(get_db), current_user = Depends(
     return {
         "summary": {
             "total_cameras": total_cameras,
-            "online_cameras": online_cameras,
+            "online_cameras": health_counts["ONLINE"],
+            "configured_online_cameras": configured_online_cameras,
             "today_detections": total_detections_today,
             "today_vehicles": total_vehicles_today,
             "active_alerts": active_alerts,
             "critical_alerts": critical_alerts,
             "plates_detected": plates_detected
+        },
+        "camera_health": {
+            "total": total_cameras,
+            "online": health_counts["ONLINE"],
+            "degraded": health_counts["DEGRADED"],
+            "offline": health_counts["OFFLINE"],
+            "unknown": health_counts["UNKNOWN"],
         },
         "charts": {
             "vehicle_types": vehicle_types_dict
