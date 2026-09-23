@@ -4,14 +4,16 @@ import { getCameras } from '../services/cameraService';
 import { searchVehicles } from '../services/dataService';
 import { Video, Upload, ServerCog, CheckCircle, ChevronRight, Activity, Car, ScanLine, Clock, Hash, Search, X, FileText } from 'lucide-react';
 
+const fallbackImage = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200"><rect fill="%231e293b" width="300" height="200"/><text fill="%2364748b" font-family="monospace" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">NO SNAPSHOT</text></svg>`;
+
 const getImageUrl = (path) => {
-  if (!path) return 'https://via.placeholder.com/150?text=No+Image';
+  if (!path) return fallbackImage;
   if (path.startsWith('http')) return path;
   let cleanPath = path.replace(/\\/g, '/');
   if (cleanPath.startsWith('uploads/')) {
     cleanPath = '/static/' + cleanPath.substring(8);
-  } else if (!cleanPath.startsWith('/')) {
-    cleanPath = '/' + cleanPath;
+  } else if (!cleanPath.startsWith('/static/')) {
+    cleanPath = cleanPath.startsWith('/') ? `/static${cleanPath}` : `/static/${cleanPath}`;
   }
   return `http://localhost:8000${cleanPath}`;
 };
@@ -60,8 +62,10 @@ export default function VideoManagement() {
       const data = await getCameras();
       setCameras(data);
       if (data.length > 0) setSelectedCameraId(data[0].id);
+      else setSelectedCameraId(1);
     } catch (err) {
       console.error(err);
+      setSelectedCameraId(1);
     }
   };
 
@@ -157,34 +161,20 @@ export default function VideoManagement() {
           <div className="flex items-center mb-8">
             <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-4">
               <span className={`flex items-center justify-center w-10 h-10 rounded-xl text-lg font-bold shadow-lg border ${uploadResult ? 'bg-gradient-to-br from-indigo-500 to-purple-600 border-indigo-400/20 shadow-indigo-500/30 text-white' : 'bg-slate-900 border-slate-700 text-slate-600'}`}>2</span>
-              Configure AI Rules
+              Initialize AI Engine
             </h2>
           </div>
           
           <div className="space-y-6">
-            <div className="bg-slate-900/60 p-6 rounded-2xl border border-slate-700/50">
-              <label className="block text-sm font-semibold text-indigo-300/80 mb-3 tracking-wide">ATTACH TO CAMERA ID</label>
-              <select 
-                value={selectedCameraId}
-                onChange={(e) => setSelectedCameraId(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-600 rounded-xl p-4 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-medium appearance-none shadow-inner"
-              >
-                <option value="">-- View Camera List --</option>
-                {cameras.map(cam => (
-                  <option key={cam.id} value={cam.id}>{cam.camera_name} ({cam.camera_code})</option>
-                ))}
-              </select>
-            </div>
-
             <button 
               onClick={handleProcess}
               disabled={!uploadResult || !selectedCameraId || processingStatus}
-              className={`w-full p-4 rounded-xl font-bold text-lg flex justify-center items-center transition-all duration-300 ${
-                !uploadResult || !selectedCameraId || processingStatus ? 'bg-slate-900 text-slate-600 cursor-not-allowed border border-slate-800' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5'
+              className={`w-full p-6 rounded-2xl font-bold text-xl flex justify-center items-center transition-all duration-300 ${
+                !uploadResult || !selectedCameraId || processingStatus ? 'bg-slate-900 text-slate-600 cursor-not-allowed border border-slate-800' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-2xl shadow-indigo-500/25 hover:-translate-y-1'
               }`}
             >
-              <ServerCog className={`w-6 h-6 mr-3 ${processingStatus ? 'animate-spin opacity-50' : ''}`} /> 
-              {processingStatus ? 'Engine Active & Analyzing...' : 'Start Inference Engine'}
+              <ServerCog className={`w-8 h-8 mr-3 ${processingStatus ? 'animate-spin opacity-50' : ''}`} /> 
+              {processingStatus ? 'Engine Active & Analyzing...' : 'Start Intelligence Inference'}
             </button>
 
             {processingStatus && (
@@ -242,7 +232,7 @@ export default function VideoManagement() {
                       <tr key={item.id || idx} onClick={() => setActiveRecord(item)} className="border-b border-slate-700/20 hover:bg-slate-800/80 transition-colors group cursor-pointer">
                         <td className="p-3">
                            <div className="w-20 h-14 bg-slate-950 rounded-lg border border-slate-700/50 overflow-hidden shadow-lg group-hover:border-indigo-500/80 group-hover:shadow-[0_0_15px_rgba(79,70,229,0.3)] transition-all">
-                              <img src={getImageUrl(item.snapshot_path)} alt="Frame" className="w-full h-full object-cover" onError={e => e.target.src='https://via.placeholder.com/150?text=No+Photo'} />
+                              <img src={getImageUrl(item.snapshot_path)} alt="Frame" className="w-full h-full object-cover bg-slate-900" onError={e => e.target.src=fallbackImage} />
                            </div>
                         </td>
                         <td className="p-3">
@@ -293,7 +283,7 @@ export default function VideoManagement() {
             </button>
             
             <div className="bg-slate-950 flex flex-col justify-center items-center relative border-b md:border-b-0 md:border-r border-slate-700/50 min-h-[300px]">
-               <img src={getImageUrl(activeRecord.snapshot_path)} alt="Extraction" className="w-full h-full object-contain" onError={e => e.target.src='https://via.placeholder.com/600'} />
+               <img src={getImageUrl(activeRecord.snapshot_path)} alt="Extraction" className="w-full h-full object-contain bg-slate-900" onError={e => e.target.src=fallbackImage} />
                <div className="absolute top-4 left-4 flex gap-2">
                  <span className="bg-indigo-600 font-bold px-3 py-1 rounded text-xs shadow-lg flex items-center">
                    <ScanLine className="w-3 h-3 mr-2" /> V-EXTRACT: {activeRecord.tracking_id}

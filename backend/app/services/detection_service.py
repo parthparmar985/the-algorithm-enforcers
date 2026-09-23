@@ -9,10 +9,21 @@ import json
 import os
 from uuid import uuid4
 import asyncio
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
+# Cloudinary config
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME', 'your_cloud_name'),
+    api_key=os.getenv('CLOUDINARY_API_KEY', 'your_api_key'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET', 'your_api_secret')
+)
 from ..models.alert import Alert
 from ..models.watchlist import Watchlist
 from ..ai.activity_detector import RuleEngine
 from ..websocket.manager import manager
+from ..database.database import SessionLocal
 from ..database.database import SessionLocal
 
 class DetectionService:
@@ -35,9 +46,13 @@ class DetectionService:
                 return
                 
             fps = cap.get(cv2.CAP_PROP_FPS)
-            process_fps = int(os.getenv("PROCESS_FPS", 15))
-            if process_fps <= 0 or process_fps > fps:
-                process_fps = fps
+            if not fps or fps <= 0 or fps != fps:
+                fps = 15.0 # Ensure live IP webcams don't divide by zero
+                
+            # Super Fast Execution for Hackathon
+            process_fps = int(os.getenv("PROCESS_FPS", 3)) 
+            if process_fps <= 0:
+                process_fps = 3
                 
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             frame_skip = max(1, int(fps / process_fps))
@@ -69,9 +84,13 @@ class DetectionService:
                     plate_text = None
                     plate_conf = 0.0
                     
-                    if cls_name in ["car", "truck", "bus", "motorcycle"]:
+                    if cls_name in ["car", "truck", "bus", "bike"]:
                         run_anpr = False
                         
+                        # Fix for Hackathon: if holding paper to webcam, tracking ID might fail. Force an ID!
+                        if not track_id:
+                            track_id = int(time.time() * 1000) % 99999
+                            
                         # Only run heavy OCR if this is a new object, or if we haven't found a high-confidence plate yet.
                         # Throttle OCR attempts by only checking every 5th processed frame to save massive CPU time.
                         # Improve multi-frame validation by heavily re-trying if confidence is less than 0.85
@@ -98,7 +117,32 @@ class DetectionService:
                         
                         crop = frame[y1:y2, x1:x2]
                         if crop.size > 0:
+                            # Instant local write so loop never gets stuck
                             cv2.imwrite(snapshot_path, crop)
+                            
+                            # Use Threading to seamlessly upload to Cloudinary without stalling processing FPS
+                            ret, buffer = cv2.imencode('.jpg', crop)
+                            if ret:
+                                def upload_task(b_bytes, s_filename):
+                                    db_inner = SessionLocal()
+                                    try:
+                                        res = cloudinary.uploader.upload(b_bytes, resource_type="image", folder="cctv_snapshots")
+                                        secure_url = res.get("secure_url")
+                                        if secure_url:
+                                            # Gracefully upgrade original local records to lightning-fast cloud urls globally
+                                            db_inner.query(Detection).filter(Detection.snapshot_path.like(f"%{s_filename}%")).update({"snapshot_path": secure_url}, synchronize_session=False)
+                                            db_inner.query(Vehicle).filter(Vehicle.snapshot_path.like(f"%{s_filename}%")).update({"snapshot_path": secure_url}, synchronize_session=False)
+                                            db_inner.query(Alert).filter(Alert.snapshot_path.like(f"%{s_filename}%")).update({"snapshot_path": secure_url}, synchronize_session=False)
+                                            db_inner.commit()
+                                    except Exception as e:
+                                        print(f"Background Cloudinary upload failed for {s_filename}:", e)
+                                    finally:
+                                        db_inner.close()
+                                
+                                import threading
+                                t = threading.Thread(target=upload_task, args=(buffer.tobytes(), snapshot_filename))
+                                t.daemon = True
+                                t.start()
                         else:
                             snapshot_path = None
                         
@@ -115,7 +159,7 @@ class DetectionService:
                     )
                     db.add(db_detection)
                     
-                    if cls_name in ["car", "truck", "bus", "motorcycle"] and track_id:
+                    if cls_name in ["car", "truck", "bus", "bike"] and track_id:
                         if track_id in active_vehicles:
                             v = active_vehicles[track_id]
                             v.last_seen = datetime.utcnow()
@@ -165,7 +209,7 @@ class DetectionService:
                                     "snapshot": db_alert.snapshot_path
                                 }
                                 try:
-                                    asyncio.run(manager.broadcast_alert(ws_payload))
+                                    manager.sync_broadcast_alert(ws_payload)
                                 except Exception:
                                     pass
                                     
@@ -196,14 +240,14 @@ class DetectionService:
                         "snapshot": db_alert.snapshot_path
                     }
                     try:
-                        asyncio.run(manager.broadcast_alert(ws_payload))
+                        run_async(manager.broadcast_alert, ws_payload)
                     except Exception as e:
-                        print("Broadcast error:", e)
+                        pass
 
                 db.commit()
                 
                 # Progress Reporting
-                if total_frames > 0 and frame_idx % 10 == 0:
+                if total_frames > 0:
                     percent = int((frame_idx / total_frames) * 100)
                     ws_payload = {
                         "type": "PROGRESS",
@@ -212,14 +256,14 @@ class DetectionService:
                         "total": total_frames
                     }
                     try:
-                        asyncio.run(manager.broadcast_progress(ws_payload))
+                        manager.sync_broadcast_progress(ws_payload)
                     except Exception as e:
-                        pass
+                        print("Progress WS Error:", e)
                 
             # Send completing progress event
             if total_frames > 0:
                 try:
-                    asyncio.run(manager.broadcast_progress({"type": "PROGRESS", "percentage": 100}))
+                    manager.sync_broadcast_progress({"type": "PROGRESS", "percentage": 100})
                 except Exception:
                     pass
                 

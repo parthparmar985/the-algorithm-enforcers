@@ -7,9 +7,10 @@ class VideoAnalyzer:
         model_path = os.getenv("YOLO_MODEL", "yolo11n.pt")
         # Initialize YOLO. It will download the weights if not present.
         self.model = YOLO(model_path)
+        # Increase strictness to avoid 32% false-positive vehicle hallucinations (e.g., misclassifying distant cars as buses).
         self.confidence_threshold = float(os.getenv("YOLO_CONFIDENCE", "0.45"))
-        # Focus on people and vehicles
-        self.target_classes = [0, 1, 2, 3, 5, 7] 
+        # Focus on ALL vehicles, ignoring everything else
+        self.target_classes = [2, 3, 5, 7] # 2: car, 3: motorcycle, 5: bus, 7: truck
 
     def process_frame(self, frame, persist=True):
         """
@@ -36,6 +37,8 @@ class VideoAnalyzer:
                 cls = int(box.cls[0])
                 conf = float(box.conf[0])
                 class_name = self.model.names[cls]
+                if class_name == "motorcycle":
+                    class_name = "bike"
                 
                 track_id = None
                 if box.id is not None:

@@ -14,3 +14,8 @@ export const getAnalyticsSummary = async () => {
   const result = await api.get('/analytics/summary');
   return result.data;
 };
+
+export const deleteVehicle = async (id) => {
+  const result = await api.delete(`/vehicles/${id}`);
+  return result.data;
+};

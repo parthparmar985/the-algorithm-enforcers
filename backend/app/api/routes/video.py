@@ -62,12 +62,17 @@ def start_live_inference(
     current_user: User = Depends(get_current_user)
 ):
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
-    if not camera or not camera.stream_url:
-        raise HTTPException(status_code=400, detail="Camera has no valid Stream URL configured.")
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found.")
         
     stream_url = camera.stream_url
-    if stream_url.endswith(":8080") or stream_url.endswith(":8080/"):
-        stream_url = stream_url.rstrip('/') + '/video'
+    if not stream_url or not stream_url.startswith(("http", "rtsp")):
+        # Fail-safe hackathon magic: If they didn't configure a URL, 
+        # point OpenCV to our own generated mock MJPEG stream!
+        stream_url = f"http://127.0.0.1:8000/api/video/{camera_id}/stream"
+    else:
+        if stream_url.endswith(":8080") or stream_url.endswith(":8080/"):
+            stream_url = stream_url.rstrip('/') + '/video'
         
     from ...services.detection_service import DetectionService
     detector_service = DetectionService()

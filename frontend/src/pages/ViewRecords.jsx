@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { searchVehicles } from '../services/dataService';
-import { Database, Search, FileText, ScanLine, Clock, X, Hash, Car, Filter, RefreshCw } from 'lucide-react';
+import { searchVehicles, deleteVehicle } from '../services/dataService';
+import { Database, Search, FileText, ScanLine, Clock, X, Hash, Car, Filter, RefreshCw, Trash2 } from 'lucide-react';
+
+const fallbackImage = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200"><rect fill="%231e293b" width="300" height="200"/><text fill="%2364748b" font-family="monospace" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">NO SNAPSHOT</text></svg>`;
 
 const getImageUrl = (path) => {
-  if (!path) return 'https://via.placeholder.com/150?text=No+Photo';
+  if (!path) return fallbackImage;
   if (path.startsWith('http')) return path;
   let cleanPath = path.replace(/\\/g, '/');
   if (cleanPath.startsWith('uploads/')) {
     cleanPath = '/static/' + cleanPath.substring(8);
-  } else if (!cleanPath.startsWith('/')) {
-    cleanPath = '/' + cleanPath;
+  } else if (!cleanPath.startsWith('/static/')) {
+    cleanPath = cleanPath.startsWith('/') ? `/static${cleanPath}` : `/static/${cleanPath}`;
   }
   return `http://localhost:8000${cleanPath}`;
 };
@@ -36,6 +38,18 @@ export default function ViewRecords() {
   useEffect(() => {
     fetchRecords();
   }, []);
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to permanently delete this intelligence record? this action cannot be undone.")) return;
+    try {
+      await deleteVehicle(id);
+      setActiveRecord(null);
+      fetchRecords(); 
+    } catch (err) {
+      console.error("Failed to delete record", err);
+      alert("Failed to delete record.");
+    }
+  };
 
   const filteredRecords = records.filter(item => 
     (item.number_plate && item.number_plate.includes(searchTerm.toUpperCase())) ||
@@ -111,9 +125,9 @@ export default function ViewRecords() {
                     </tr>
                   ) : filteredRecords.map((item, idx) => (
                     <tr key={item.id || idx} onClick={() => setActiveRecord(item)} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors group cursor-pointer">
-                      <td className="p-4">
-                         <div className="w-28 h-20 bg-slate-950 rounded-xl border border-slate-700 overflow-hidden shadow-lg group-hover:border-indigo-500/80 transition-all">
-                            <img src={getImageUrl(item.snapshot_path)} alt="Frame" className="w-full h-full object-cover" onError={e => e.target.src='https://via.placeholder.com/200?text=No+Photo'} />
+                       <td className="p-4">
+                         <div className="w-40 h-28 bg-slate-950 rounded-xl border border-slate-700 overflow-hidden shadow-lg group-hover:border-indigo-500/80 transition-all group-hover:scale-105 duration-300">
+                            <img src={getImageUrl(item.snapshot_path)} alt="Frame" className="w-full h-full object-contain bg-slate-900" onError={e => e.target.src=fallbackImage} />
                          </div>
                       </td>
                       <td className="p-4">
@@ -162,9 +176,14 @@ export default function ViewRecords() {
       {activeRecord && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex justify-center items-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl shadow-[0_0_150px_rgba(79,70,229,0.3)] animate-enter grid grid-cols-1 md:grid-cols-2 overflow-hidden relative">
-            <button onClick={() => setActiveRecord(null)} className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 p-2.5 rounded-full text-white transition-colors z-10 shadow-lg">
-               <X className="w-5 h-5" />
-            </button>
+            <div className="absolute top-4 right-4 flex gap-3 z-10">
+              <button onClick={() => handleDelete(activeRecord.id)} className="bg-red-600/80 hover:bg-red-500 p-2.5 rounded-full text-white transition-colors shadow-lg" title="Delete Record">
+                 <Trash2 className="w-5 h-5" />
+              </button>
+              <button onClick={() => setActiveRecord(null)} className="bg-slate-800/80 hover:bg-slate-700 p-2.5 rounded-full text-white transition-colors shadow-lg" title="Close">
+                 <X className="w-5 h-5" />
+              </button>
+            </div>
             
             <div className="bg-slate-950 flex flex-col justify-center items-center relative border-b md:border-b-0 md:border-r border-slate-700/50 min-h-[350px]">
                <img src={getImageUrl(activeRecord.snapshot_path)} alt="Extraction" className="w-full h-full object-contain" onError={e => e.target.src='https://via.placeholder.com/600'} />

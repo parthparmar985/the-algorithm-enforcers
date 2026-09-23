@@ -18,3 +18,17 @@ def get_vehicle(id: int, db: Session = Depends(get_db), current_user = Depends(g
     if not veh:
         raise HTTPException(status_code=404, detail="Vehicle not found")
     return veh
+
+@router.delete("/{id}")
+def delete_vehicle(id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    veh = db.query(Vehicle).filter(Vehicle.id == id).first()
+    if not veh:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    
+    # Also clean up related detections safely if any by tracking_id
+    from ...models.detection import Detection
+    db.query(Detection).filter(Detection.tracking_id == veh.tracking_id).delete()
+    
+    db.delete(veh)
+    db.commit()
+    return {"status": "success", "message": "Record deleted successfully"}

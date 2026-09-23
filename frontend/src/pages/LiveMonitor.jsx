@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getCameras } from '../services/cameraService';
+import { startLiveInference } from '../services/videoService';
 import { Activity, Signal, MapPin } from 'lucide-react';
 
 export default function LiveMonitor() {
@@ -73,9 +74,21 @@ export default function LiveMonitor() {
                       <h3 className="font-medium text-slate-300 text-sm mt-1 drop-shadow-md">{cam.camera_name}</h3>
                     </div>
                     
-                    <div className="px-3 py-1 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                      <span className="text-xs font-semibold tracking-wide text-blue-100">{cam.location || 'Unknown Location'}</span>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="px-3 py-1 bg-black/50 backdrop-blur-md border border-white/10 rounded-lg flex items-center gap-2">
+                        <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                        <span className="text-xs font-semibold tracking-wide text-blue-100">{cam.location || 'Unknown Location'}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          startLiveInference(cam.id)
+                            .then(() => alert(`Live AI Engine Activated for CAM-${cam.camera_code}! Keep watching for Watchlist Alerts.`))
+                            .catch((err) => alert('Failed to start engine: ' + (err.response?.data?.detail || err.message)));
+                        }}
+                        className="px-3 py-1.5 mt-1 bg-indigo-600/90 hover:bg-indigo-500 text-white text-[10px] font-bold rounded shadow-lg tracking-wider border border-indigo-400 transition-colors"
+                      >
+                        ACTIVATE AI ENGINE
+                      </button>
                     </div>
                   </div>
                 </div>

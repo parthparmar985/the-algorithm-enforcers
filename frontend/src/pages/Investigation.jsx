@@ -14,14 +14,16 @@ L.Icon.Default.mergeOptions({
 
 import api from '../services/api';
 
+const fallbackImage = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200"><rect fill="%231e293b" width="300" height="200"/><text fill="%2364748b" font-family="monospace" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">NO SNAPSHOT</text></svg>`;
+
 const getImageUrl = (path) => {
-  if (!path) return 'https://via.placeholder.com/300?text=No+Snapshot';
+  if (!path) return fallbackImage;
   if (path.startsWith('http')) return path;
   let cleanPath = path.replace(/\\/g, '/');
   if (cleanPath.startsWith('uploads/')) {
     cleanPath = '/static/' + cleanPath.substring(8);
-  } else if (!cleanPath.startsWith('/')) {
-    cleanPath = '/' + cleanPath;
+  } else if (!cleanPath.startsWith('/static/')) {
+    cleanPath = cleanPath.startsWith('/') ? `/static${cleanPath}` : `/static/${cleanPath}`;
   }
   return `http://localhost:8000${cleanPath}`;
 };
@@ -216,7 +218,7 @@ export default function Investigation() {
                         src={getImageUrl(item.snapshot_path)} 
                         alt="Evidence" 
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        onError={(e) => e.target.src = 'https://via.placeholder.com/300?text=No+Snapshot'}
+                        onError={(e) => e.target.src = fallbackImage}
                       />
                       <div className="absolute top-2 right-2 bg-black/70 backdrop-blur text-white text-xs font-bold px-2 py-1 rounded-lg">
                         #{index + 1}
