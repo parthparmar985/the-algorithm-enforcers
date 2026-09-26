@@ -32,6 +32,7 @@ class VideoAnalyzer:
             conf=self.confidence_threshold, 
             classes=self.target_classes, 
             tracker="bytetrack.yaml",
+            device=os.getenv("YOLO_DEVICE") or None,
             verbose=False
         )
         

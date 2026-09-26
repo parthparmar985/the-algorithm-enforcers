@@ -35,7 +35,8 @@ except Exception as e:
 import os
 from fastapi.staticfiles import StaticFiles
 
-os.makedirs("uploads/snapshots", exist_ok=True)
+upload_dir = os.getenv("UPLOAD_DIR", "uploads")
+os.makedirs(os.path.join(upload_dir, "snapshots"), exist_ok=True)
 
 app = FastAPI(title="AI CCTV Intelligence Platform")
 
@@ -50,7 +51,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="uploads"), name="static")
+app.mount("/static", StaticFiles(directory=upload_dir), name="static")
 
 from .api.routes import auth
 from .api.routes import cameras

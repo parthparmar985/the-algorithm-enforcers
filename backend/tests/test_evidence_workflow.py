@@ -49,7 +49,7 @@ class EvidenceWorkflow(unittest.TestCase):
         token = cls.client.post('/api/auth/login', data={'username': 'admin@ai.local', 'password': 'admin123'}).json()['access_token']
         cls.headers['admin'] = {'Authorization': f'Bearer {token}'}
         cls.path = Path(os.environ['UPLOAD_DIR']) / 'snapshots' / 'test.jpg'
-        cls.path.parent.mkdir(parents=True)
+        cls.path.parent.mkdir(parents=True, exist_ok=True)
         Image.new('RGB', (600, 240), '#314c70').save(cls.path)
         cls.original = cls.path.read_bytes()
         now = datetime(2026, 9, 4, 10, 32, 14)
@@ -69,6 +69,42 @@ class EvidenceWorkflow(unittest.TestCase):
     def tearDownClass(cls):
         cls.client.__exit__(None,None,None)
         engine.dispose()
+
+    def test_processing_runtime_and_camera_events(self):
+        import cv2
+        import numpy as np
+        from app.services.detection_service import DetectionService
+        from app.services.stream_runtime import snapshot
+        from app.websocket.manager import manager
+        clip = Path(scratch.name) / 'runtime.avi'
+        writer = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*'MJPG'), 15, (64, 64))
+        self.assertTrue(writer.isOpened())
+        for _ in range(15): writer.write(np.zeros((64,64,3), np.uint8))
+        writer.release()
+        with patch('app.services.detection_service.VideoAnalyzer') as detector, patch('app.services.detection_service.ANPREngine') as ocr:
+            detector.return_value.process_frame.return_value = [dict(bbox=[1,1,60,60], **{'class':'car'}, confidence=.9, track_id=911)]
+            ocr.return_value.extract_number_plate.return_value = (None,0)
+            service=DetectionService()
+            with patch.object(manager, 'sync_broadcast_alert') as broadcast:
+                service.rule_engine.evaluate=lambda camera, detections: [dict(camera_id=camera,alert_type='TEST',severity='LOW',message='Synthetic rule output')]
+                service.process_video_file(1,str(clip))
+                self.assertTrue(broadcast.called)
+                self.assertEqual(broadcast.call_args.args[0]['camera_id'],1)
+            row=snapshot(1)
+            self.assertEqual(row['frames_received'],15)
+            self.assertEqual(row['frames_processed'],3)
+            self.assertEqual(row['skipped_frames'],12)
+            self.assertFalse(row['active'])
+            with SessionLocal() as db:
+                self.assertEqual(db.query(Detection).filter_by(camera_id=1,tracking_id=911).count(),3)
+            response=self.client.get('/api/video/1/runtime-health',headers=self.headers['owner'])
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json()['runtime']['frames_processed'],3)
+            detector.return_value.process_frame.side_effect=RuntimeError('model failed')
+            with self.assertRaises(RuntimeError): service.process_video_file(2,str(clip))
+            self.assertEqual(snapshot(2)['status'],'OFFLINE')
+            self.assertIn('RuntimeError',snapshot(2)['last_error'])
+        self.assertEqual(self.client.post('/api/video/1/start-live',headers=self.headers['owner']).status_code,400)
 
     def request(self, method, url, **kwargs):
         return self.client.request(method, '/api/evidence'+url, headers=self.headers['owner'], **kwargs)

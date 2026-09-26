@@ -8,22 +8,12 @@ import cv2
 import json
 import os
 from uuid import uuid4
-import asyncio
-import cloudinary
-import cloudinary.uploader
-import cloudinary.api
-
-# Cloudinary config
-cloudinary.config(
-    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME', 'your_cloud_name'),
-    api_key=os.getenv('CLOUDINARY_API_KEY', 'your_api_key'),
-    api_secret=os.getenv('CLOUDINARY_API_SECRET', 'your_api_secret')
-)
+import time
+from .stream_runtime import ResilientCapture, processed, skipped, update, snapshot, reserve, finish
 from ..models.alert import Alert
 from ..models.watchlist import Watchlist
 from ..ai.activity_detector import RuleEngine
 from ..websocket.manager import manager
-from ..database.database import SessionLocal
 from ..database.database import SessionLocal
 
 class DetectionService:
@@ -38,13 +28,16 @@ class DetectionService:
             
     def process_video_file(self, camera_id: int, video_path: str):
         # We need a new session since this runs in a background thread
+        owns_reservation = reserve(camera_id)
         db = SessionLocal()
+        cap = None
         try:
-            cap = cv2.VideoCapture(video_path)
+            cap = ResilientCapture(camera_id, video_path)
             if not cap.isOpened():
                 print(f"Error opening video {video_path}")
                 return
                 
+            first_read = cap.read()
             fps = cap.get(cv2.CAP_PROP_FPS)
             if not fps or fps <= 0 or fps != fps:
                 fps = 15.0 # Ensure live IP webcams don't divide by zero
@@ -62,13 +55,16 @@ class DetectionService:
             active_vehicles = {}
             
             while cap.isOpened():
-                ret, frame = cap.read()
+                ret, frame = first_read if first_read is not None else cap.read()
+                first_read = None
                 if not ret:
                     break
                     
                 frame_idx += 1
                 if frame_idx % frame_skip != 0:
+                    skipped(camera_id)
                     continue
+                processing_started = time.monotonic()
                 
                 # Enhance frame quality for robust AI detection under varying conditions
                 frame = cv2.convertScaleAbs(frame, alpha=1.1, beta=5)
@@ -122,8 +118,13 @@ class DetectionService:
                             
                             # Use Threading to seamlessly upload to Cloudinary without stalling processing FPS
                             ret, buffer = cv2.imencode('.jpg', crop)
-                            if ret:
+                            if ret and os.getenv("CLOUDINARY_UPLOAD_ENABLED", "false").lower() == "true":
                                 def upload_task(b_bytes, s_filename):
+                                    import cloudinary
+                                    import cloudinary.uploader
+                                    cloudinary.config(cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+                                                      api_key=os.getenv('CLOUDINARY_API_KEY'),
+                                                      api_secret=os.getenv('CLOUDINARY_API_SECRET'))
                                     db_inner = SessionLocal()
                                     try:
                                         res = cloudinary.uploader.upload(b_bytes, resource_type="image", folder="cctv_snapshots")
@@ -240,17 +241,18 @@ class DetectionService:
                         "snapshot": db_alert.snapshot_path
                     }
                     try:
-                        run_async(manager.broadcast_alert, ws_payload)
+                        manager.sync_broadcast_alert(ws_payload)
                     except Exception as e:
                         pass
 
                 db.commit()
+                processed(camera_id, time.monotonic() - processing_started)
                 
                 # Progress Reporting
                 if total_frames > 0:
                     percent = int((frame_idx / total_frames) * 100)
                     ws_payload = {
-                        "type": "PROGRESS",
+                        "type": "PROGRESS", "camera_id": camera_id,
                         "percentage": percent,
                         "frame": frame_idx,
                         "total": total_frames
@@ -263,10 +265,18 @@ class DetectionService:
             # Send completing progress event
             if total_frames > 0:
                 try:
-                    manager.sync_broadcast_progress({"type": "PROGRESS", "percentage": 100})
+                    manager.sync_broadcast_progress({"type": "PROGRESS", "camera_id": camera_id, "percentage": 100})
                 except Exception:
                     pass
                 
             cap.release()
+        except Exception as exc:
+            db.rollback()
+            update(camera_id, status="OFFLINE", last_error="Processing failed: " + type(exc).__name__)
+            raise
         finally:
+            if cap is not None:
+                cap.release()
             db.close()
+            if owns_reservation:
+                finish(camera_id)

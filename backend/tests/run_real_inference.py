@@ -32,8 +32,9 @@ with TestClient(app) as client:
     with SessionLocal() as db:
         db.add(Watchlist(registration_number='GJ01AB1234', category='VALIDATION', priority='HIGH'))
         db.commit()
+    from app.services.stream_runtime import snapshot
     # The supplied plate-only sample and a short excerpt of existing traffic footage.
-    for index, source in enumerate(['uploads/test_sample.mp4','uploads/088a8489-f35c-4fa9-b8fc-d77250832ad0.mp4']):
+    for index, source in enumerate(['uploads/test_sample.mp4',str(next(p for p in Path('uploads').glob('*.mp4') if p.name != 'test_sample.mp4'))]):
         clip=output/f'input_{index}.mp4'
         cap=cv2.VideoCapture(source)
         fps=cap.get(cv2.CAP_PROP_FPS) or 15
@@ -50,6 +51,10 @@ with TestClient(app) as client:
         print('Running actual inference:',source,flush=True)
         processed=client.post(f'/api/video/{camera_id}/process',headers=headers,params={'file_path':uploaded.json()['file_path']})
         processed.raise_for_status()
+        runtime = snapshot(camera_id)
+        if runtime['last_error'] or not runtime['frames_processed']:
+            raise RuntimeError(str(runtime))
+        results[f'video_{index}_runtime']=runtime
         results[f'video_{index}_upload_process']='PASS'
     with SessionLocal() as db:
         results.update(detections=db.query(Detection).count(),tracked_detections=db.query(Detection).filter(Detection.tracking_id.is_not(None)).count(),vehicles=db.query(Vehicle).count(),plates=[v.number_plate for v in db.query(Vehicle).filter(Vehicle.number_plate.is_not(None)).all()],alerts=db.query(Alert).count())

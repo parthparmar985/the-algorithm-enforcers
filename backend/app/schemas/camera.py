@@ -35,6 +35,7 @@ class CameraResponse(CameraBase):
     stream_available: bool = False
     health_message: Optional[str] = None
     last_detection_at: Optional[datetime] = None
+    runtime_health: Optional[dict] = None
     
     class Config:
         from_attributes = True

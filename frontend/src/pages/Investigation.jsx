@@ -1,3 +1,4 @@
+import { backendUrl } from '../services/endpoints';
 import { useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -25,7 +26,7 @@ const getImageUrl = (path) => {
   } else if (!cleanPath.startsWith('/static/')) {
     cleanPath = cleanPath.startsWith('/') ? `/static${cleanPath}` : `/static/${cleanPath}`;
   }
-  return `http://localhost:8000${cleanPath}`;
+  return `${backendUrl}${cleanPath}`;
 };
 
 export default function Investigation() {

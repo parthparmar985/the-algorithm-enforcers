@@ -27,7 +27,8 @@ def delete_vehicle(id: int, db: Session = Depends(get_db), current_user = Depend
     
     # Also clean up related detections safely if any by tracking_id
     from ...models.detection import Detection
-    db.query(Detection).filter(Detection.tracking_id == veh.tracking_id).delete()
+    db.query(Detection).filter(Detection.tracking_id == veh.tracking_id, Detection.camera_id == veh.camera_id,
+                               Detection.timestamp >= veh.first_seen, Detection.timestamp <= veh.last_seen).delete()
     
     db.delete(veh)
     db.commit()

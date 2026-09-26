@@ -137,7 +137,7 @@ def apply_probe_result(db: Session, camera: Camera, result: ProbeResult, checked
     db.refresh(camera)
     if alert:
         db.refresh(alert)
-        manager.broadcast_alert_sync({
+        manager.sync_broadcast_alert({
             "type": "ALERT", "alert_id": alert.id, "alert_type": alert.alert_type,
             "camera_id": camera.id, "camera_code": camera.camera_code,
             "camera_name": camera.camera_name, "location": camera.location,

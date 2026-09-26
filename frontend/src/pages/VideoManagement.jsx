@@ -1,3 +1,4 @@
+import { backendUrl, connectAlerts } from '../services/endpoints';
 import { useState, useEffect } from 'react';
 import { uploadVideo, startProcessing } from '../services/videoService';
 import { getCameras } from '../services/cameraService';
@@ -15,7 +16,7 @@ const getImageUrl = (path) => {
   } else if (!cleanPath.startsWith('/static/')) {
     cleanPath = cleanPath.startsWith('/') ? `/static${cleanPath}` : `/static/${cleanPath}`;
   }
-  return `http://localhost:8000${cleanPath}`;
+  return `${backendUrl}${cleanPath}`;
 };
 
 export default function VideoManagement() {
@@ -32,11 +33,10 @@ export default function VideoManagement() {
 
   useEffect(() => {
     fetchCameras();
-    const ws = new WebSocket('ws://localhost:8000/ws/alerts');
-    ws.onmessage = (event) => {
+    const disconnect = connectAlerts((event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'PROGRESS') {
+        if (data.type === 'PROGRESS' && String(data.camera_id) === String(window.__selectedCameraIdForSocket)) {
           setProgress(data.percentage);
           if (data.percentage >= 100) {
             setProcessingStatus('Completed & Analyzed.');
@@ -53,8 +53,8 @@ export default function VideoManagement() {
           }
         }
       } catch (err) {}
-    };
-    return () => ws.close();
+    });
+    return disconnect;
   }, []);
 
   const fetchCameras = async () => {

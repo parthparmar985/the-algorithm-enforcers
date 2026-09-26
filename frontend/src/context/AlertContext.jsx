@@ -1,3 +1,4 @@
+import { connectAlerts } from '../services/endpoints';
 import { createContext, useState, useEffect, useContext } from 'react';
 import { useAuth } from './AuthContext';
 
@@ -12,9 +13,7 @@ export const AlertProvider = ({ children }) => {
     if (!user) return;
     
     // Connect to WebSocket
-    const ws = new WebSocket('ws://localhost:8000/ws/alerts');
-    
-    ws.onmessage = (event) => {
+    const disconnect = connectAlerts((event) => {
       try {
         const data = JSON.parse(event.data);
         
@@ -26,7 +25,7 @@ export const AlertProvider = ({ children }) => {
         // Only handle alert messages
         if (data.alert_id || data.alert_type || data.type === 'ALERT') {
           setLatestAlert(data);
-          setAlerts(prev => [data, ...prev]);
+          setAlerts(prev => [data, ...prev].slice(0, 200));
           
           // Auto-clear toast after 5s
           setTimeout(() => {
@@ -36,11 +35,8 @@ export const AlertProvider = ({ children }) => {
       } catch (err) {
         console.error("Alert WS Parse Error:", err);
       }
-    };
-    
-    return () => {
-      ws.close();
-    };
+    });
+    return disconnect;
   }, [user]);
 
   const clearLatest = () => setLatestAlert(null);

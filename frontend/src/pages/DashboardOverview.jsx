@@ -90,8 +90,8 @@ export default function DashboardOverview() {
             <BarChart data={chartData}>
               <XAxis dataKey="name" stroke="#94a3b8" />
               <YAxis stroke="#94a3b8" />
-              <Tooltip cursor={{fill: '#334155'}} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
-              <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              <Tooltip cursor={{fill: '#3e4840'}} contentStyle={{ backgroundColor: '#272727', border: '1px solid #b7c6c233', borderRadius: '8px', color: '#fff' }} />
+              <Bar dataKey="count" fill="#ffe17c" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

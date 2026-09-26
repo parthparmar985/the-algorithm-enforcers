@@ -21,18 +21,18 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast_alert(self, alert_data: dict):
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
-                await connection.send_text(json.dumps(alert_data))
+                await asyncio.wait_for(connection.send_text(json.dumps(alert_data)), timeout=2)
             except Exception:
-                pass
+                self.disconnect(connection)
                 
     async def broadcast_progress(self, progress_data: dict):
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
-                await connection.send_text(json.dumps(progress_data))
+                await asyncio.wait_for(connection.send_text(json.dumps(progress_data)), timeout=2)
             except Exception:
-                pass
+                self.disconnect(connection)
 
     def sync_broadcast_progress(self, progress_data: dict):
         if self.loop and self.loop.is_running():
@@ -41,5 +41,8 @@ class ConnectionManager:
     def sync_broadcast_alert(self, alert_data: dict):
         if self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(self.broadcast_alert(alert_data), self.loop)
+
+    # Compatibility with health/evidence callers.
+    broadcast_alert_sync = sync_broadcast_alert
 
 manager = ConnectionManager()

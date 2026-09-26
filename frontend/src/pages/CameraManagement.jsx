@@ -1,3 +1,4 @@
+import { backendUrl } from '../services/endpoints';
 import { useState, useEffect } from 'react';
 import { getCameras, createCamera, deleteCamera, updateCamera, checkCameraHealth, checkAllCameraHealth } from '../services/cameraService';
 import { startLiveInference } from '../services/videoService';
@@ -261,7 +262,7 @@ export default function CameraManagement() {
                       <div className="w-full h-40 bg-slate-950 rounded-xl mb-4 mt-2 overflow-hidden border border-slate-700/50 shadow-inner relative flex justify-center items-center group-hover:border-blue-500/50 transition-all">
                          {cam.stream_available && ['ONLINE', 'DEGRADED'].includes(cam.health_status) ? (
                             <>
-                               <img src={`http://localhost:8000/api/video/${cam.id}/stream`} alt={`Stream ${cam.camera_code}`} className="w-full h-full object-cover opacity-90" />
+                               <img src={`${backendUrl}/api/video/${cam.id}/stream`} alt={`Stream ${cam.camera_code}`} className="w-full h-full object-cover opacity-90" />
                                <div className="absolute top-2 left-2 bg-red-600/90 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> REC</div>
                             </>
                          ) : (
@@ -282,7 +283,7 @@ export default function CameraManagement() {
                            <div className="flex items-center gap-2">
                               <Signal className="w-4 h-4 text-blue-400/50" />
                               <span className="truncate font-mono text-[9px] uppercase font-bold text-slate-500">
-                                 {cam.stream_url ? 'RTSP ACTIVE' : 'NO URL'}
+                                 {cam.stream_url ? 'STREAM CONFIGURED' : 'NO URL'}
                               </span>
                            </div>
                         </div>
@@ -294,6 +295,15 @@ export default function CameraManagement() {
                           <span>Latency: <strong className="text-slate-300">{cam.latency_ms == null ? 'Not measured' : `${cam.latency_ms} ms`}</strong></span>
                           <span>Last detection: <strong className="text-slate-300">{showTime(cam.last_detection_at)}</strong></span>
                         </div>
+                        {cam.runtime_health && (
+                          <div className="text-xs text-slate-300 border-t border-slate-700 pt-2">
+                            <p>Processing: {cam.runtime_health.status} ? {cam.runtime_health.processing_fps.toFixed(1)} FPS</p>
+                            <p>Source FPS: {cam.runtime_health.source_fps ?? 'Unknown'} ? Received: {cam.runtime_health.frames_received} ? Processed: {cam.runtime_health.frames_processed}</p>
+                            <p>Skipped: {cam.runtime_health.skipped_frames} ? Failed reads: {cam.runtime_health.failed_reads}</p>
+                            <p>Last frame: {showTime(cam.runtime_health.last_frame_at)}</p>
+                            {cam.runtime_health.last_error && <p className="text-amber-300">{cam.runtime_health.last_error}</p>}
+                          </div>
+                        )}
                         {cam.health_message && <p className={`text-xs ${cam.health_status === 'OFFLINE' ? 'text-red-300' : cam.health_status === 'DEGRADED' ? 'text-amber-300' : 'text-slate-400'}`}>{cam.health_message}</p>}
                         <button type="button" onClick={() => handleHealthCheck(cam.id)} disabled={checkingAll || checking.has(cam.id)} className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 py-2 rounded-lg text-xs font-bold flex justify-center items-center gap-2"><RefreshCw className={`w-3 h-3 ${checking.has(cam.id) ? 'animate-spin' : ''}`} />{checking.has(cam.id) ? 'Checking...' : 'Check Health'}</button>
                       </div>

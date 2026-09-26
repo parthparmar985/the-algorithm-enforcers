@@ -30,6 +30,8 @@ def camera_rows(db: Session, camera_id: int | None = None):
     rows = query.order_by(Camera.id).all()
     for camera, last_detection in rows:
         camera.last_detection_at = last_detection
+        from ...services.stream_runtime import snapshot
+        camera.runtime_health = snapshot(camera.id)
     return [camera for camera, _last_detection in rows]
 
 

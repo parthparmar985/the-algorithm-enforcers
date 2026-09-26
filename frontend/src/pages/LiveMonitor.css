@@ -1,0 +1,40 @@
+.live-camera-card:fullscreen {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+  display: flex;
+}
+
+/* Keep the original image in place and reserve room for the existing controls. */
+.live-camera-card:fullscreen .live-camera-header,
+.live-camera-card:fullscreen .live-camera-health {
+  position: relative;
+  flex-shrink: 0;
+  background: #0f172a;
+}
+
+.live-camera-card:fullscreen .live-camera-feed {
+  position: relative;
+  inset: auto;
+  order: 1;
+  flex: 1;
+  min-height: 0;
+}
+
+.live-camera-card:fullscreen .live-camera-feed img {
+  position: absolute;
+  inset: 0;
+  object-fit: contain;
+}
+
+.live-camera-card:fullscreen .live-camera-health {
+  order: 2;
+}
+
+.live-camera-header > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

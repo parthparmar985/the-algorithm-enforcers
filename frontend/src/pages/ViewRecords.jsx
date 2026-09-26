@@ -1,3 +1,4 @@
+import { backendUrl } from '../services/endpoints';
 import { useState, useEffect } from 'react';
 import { searchVehicles, deleteVehicle } from '../services/dataService';
 import { Database, Search, FileText, ScanLine, Clock, X, Hash, Car, Filter, RefreshCw, Trash2 } from 'lucide-react';
@@ -13,7 +14,7 @@ const getImageUrl = (path) => {
   } else if (!cleanPath.startsWith('/static/')) {
     cleanPath = cleanPath.startsWith('/') ? `/static${cleanPath}` : `/static/${cleanPath}`;
   }
-  return `http://localhost:8000${cleanPath}`;
+  return `${backendUrl}${cleanPath}`;
 };
 
 export default function ViewRecords() {
